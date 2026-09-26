@@ -1,0 +1,31 @@
+// Element Plus 亮色主题变量覆盖（必须在任何加载 element-plus 源码样式的文件之前，
+// sass 要求带配置的模块先于普通加载出现；下面的 el-theme / el-dark 都依赖这份配置）
+@use './core/el-light.scss' as *;
+
+// 重置默认样式
+@use './core/reset.scss';
+
+// 应用全局样式
+@use './core/app.scss';
+
+// Element Plus 组件库样式（全量源码编译，带 el-light.scss 的变量覆盖）
+// 必须排在 el-ui.scss / el-dark.scss 之前，后两者是在它基础上做覆盖
+@use './core/el-theme.scss';
+
+// Element Plus 样式优化
+@use './core/el-ui.scss';
+
+// Element Plus 暗黑主题
+@use './core/el-dark.scss';
+
+// 暗黑主题样式优化
+@use './core/dark.scss';
+
+// 路由切换动画
+@use './core/router-transition';
+
+// 主题切换过渡优化
+@use './core/theme-change.scss';
+
+// 主题切换圆形扩散动画
+@use './core/theme-animation.scss';

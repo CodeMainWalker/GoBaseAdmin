@@ -1,0 +1,16 @@
+// Element Plus 主题：一次性编译全量源码样式
+//
+// 为什么不用 unplugin-vue-components 的按需注入（importStyle: 'css' / 'sass'）：
+//   - importStyle: 'css' 引的是 theme-chalk 预编译产物，用的是 Element Plus 默认变量，
+//     完全绕过 el-light.scss 里 `@forward ... with (...)` 的覆盖；而 unplugin-element-plus
+//     的 useSource: true 又让显式 import 的组件走源码，于是产物里会同时出现两套 `:root`
+//     变量（实测 --el-color-success 既有默认 #67c23a 也有自定义 #13deb9），谁生效取决于
+//     CSS 拼接顺序。
+//   - importStyle: 'sass' 虽然一致，但会让 118 个组件的 theme-chalk 源码分别编译一次，
+//     而 vite 的 additionalData 又给每次编译前置了 el-light.scss + mixin.scss，
+//     common/var.scss 被反复求值。实测开发服务器每次重启后首个模块要等 ~50s。
+//
+// 全量源码一次编译只需 ~0.7s（sass-embedded），变量覆盖确定生效，组件级 map 覆盖
+// （$button / $messagebox / $popover）也才真正起作用。代价是产物包含全部组件样式，
+// 不再按页面分割，对登录后才用的后台系统来说这个交换是划算的。
+@use 'element-plus/theme-chalk/src/index.scss';
