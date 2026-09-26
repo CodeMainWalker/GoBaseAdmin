@@ -292,7 +292,7 @@ FastRoute(g, CRUD{
 | 数据权限 | 非超管仅能操作自己部门及子部门的用户（`deptSubtreeIDs`） |
 | 用户批量删除 | 明确拒绝，返回 `禁止批量删除操作` |
 | 超级管理员 | `id=1` 不可删除、不可重置密码 |
-| 服务监控 | 返回体里 `memory.php_version` / `cpu.go_version` 沿用上游键名（历史命名不改），值都是 Go 运行时版本 |
+| 服务监控 | 主机指标（磁盘/CPU/负载）取自系统原生接口；`memory.php_version` / `cpu.go_version` 沿用上游键名（历史命名不改），值都是 Go 运行时版本 |
 
 ---
 
@@ -313,6 +313,7 @@ server/
 │   ├── query/       # 分页与搜索（对应 BaseLogic）
 │   ├── store/       # 数据库连接
 │   ├── svc/         # 用户上下文与权限缓存
+│   ├── sysinfo/     # 主机指标采集（磁盘 / CPU / 负载，分平台实现）
 │   ├── middleware/  # 登录校验、授权、操作日志、CORS、异常兜底
 │   ├── handler/     # 各控制器
 │   └── router/      # 路由与权限元信息注册
@@ -325,10 +326,35 @@ server/
 
 1. **缓存为单进程内存实现**。若需多实例部署，请将 `internal/cache` 换成 Redis
    （接口已抽象，键名沿用 `saiadmin:*` 前缀，便于与既有数据共存）。
-2. **服务监控**的 CPU / 磁盘 / 负载为简化实现，内存与协程数取自 Go runtime；
-   字段名沿用上游契约以免前端报错。
+2. **服务监控**的主机指标（磁盘、CPU、负载）取自操作系统原生接口，见下方「服务监控指标」；
+   `memory.*` 与 `goroutines` 取自 Go runtime（进程口径，不是整机内存），字段名沿用上游契约以免前端报错。
 3. **Excel 导入导出**（岗位）未实现，对应路由未注册；前端该功能会提示请求失败。
 4. **插件市场**未实现：对应前端页面、菜单与数据表均已删除。
 5. **数据表维护**的优化/碎片整理使用 MySQL 语法（`OPTIMIZE TABLE` / `ALTER TABLE ... ENGINE=InnoDB`），
    不支持 PostgreSQL。
 6. 修复了上游 `saveMenuPermission` 中 `limit(100)` 导致菜单权限超过 100 条被静默截断的缺陷。
+
+---
+
+## 服务监控指标（`GET /core/server/monitor`）
+
+主机指标由 `internal/sysinfo` 按平台采集，全部是真实数值，采集失败时返回占位符
+（`disk.path = "-"`、`cpu.used = "-"`、`load.available = false`），不会把失败伪装成 0：
+
+| 字段 | 含义 | 数据来源 |
+|---|---|---|
+| `disk.total/used/free/usage/path` | 当前工作目录所在卷 / 文件系统的容量（字节） | Windows：`GetDiskFreeSpaceEx`；Linux/macOS/FreeBSD：`statfs` |
+| `cpu.usage`（`used`/`idle` 为其文本形式） | CPU 使用率百分比 | Windows：`GetSystemTimes` 两次采样差值；Linux：`/proc/stat` 两次采样差值 |
+| `load.one/five/fifteen` | 1 / 5 / 15 分钟平均负载 | Linux：`/proc/loadavg`；macOS/BSD：`sysctl vm.loadavg` |
+| `load.available` | 平台是否提供 load average | Windows 为 `false`：Windows 没有 load average 概念（等价指标是处理器队列长度，需要 PDH 计数器），页面上以 CPU 使用率代替 |
+| `memory.total/used/free/usage`、`goroutines` | Go 进程内存与协程数 | Go runtime（`runtime.ReadMemStats` / `NumGoroutine`） |
+
+- CPU 使用率是**两次采样之间的差值**：首次请求返回自开机以来的平均值，
+  之后每次请求返回距上次请求区间内的真实占用，所以前端页面按固定间隔（5 秒）自动刷新。
+- 平台支持情况：`internal/sysinfo` 用 build tag 分文件实现，已在
+  `windows/amd64`、`windows/arm64`、`linux/amd64`、`linux/arm64`、`linux/386`、
+  `darwin/amd64`、`darwin/arm64`、`freebsd/amd64`、`dragonfly/amd64`、`openbsd/amd64`、
+  `netbsd/amd64`、`solaris/amd64`、`aix/ppc64`、`js/wasm`、`plan9/amd64` 上通过编译；
+  openbsd / netbsd 的 `statfs` 字段名与其它平台不同，磁盘指标在这两个平台会显示占位符。
+- 自动化验证：`go test ./internal/sysinfo -v`
+  （磁盘容量为正、CPU 忙等 300ms 后能测出非零使用率、不支持负载的平台 `Available=false`）。

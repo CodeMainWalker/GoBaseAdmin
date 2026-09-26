@@ -34,6 +34,54 @@
         </el-card>
       </el-col>
 
+      <!-- CPU 与负载（真实指标：Windows 取 GetSystemTimes，Linux 取 /proc/stat 与 /proc/loadavg） -->
+      <el-col :span="24" class="mb-4">
+        <el-card class="art-table-card" shadow="never">
+          <template #header>
+            <div class="card-header">
+              <span class="text-lg font-medium">CPU 与负载</span>
+              <span class="text-g-600 text-sm">
+                每 5 秒自动刷新{{ lastUpdated ? `，最后更新 ${lastUpdated}` : '' }}
+              </span>
+            </div>
+          </template>
+          <div class="flex justify-between">
+            <div class="flex-1">
+              <el-descriptions class="memory-desc" :column="1" border>
+                <el-descriptions-item label="CPU 核心数">
+                  {{ serverInfo.cpu.cores }}
+                </el-descriptions-item>
+                <el-descriptions-item label="CPU 使用率">
+                  {{ cpuUsageText }}
+                </el-descriptions-item>
+                <el-descriptions-item label="已用 / 空闲">
+                  {{ serverInfo.cpu.used }} / {{ serverInfo.cpu.idle }}
+                </el-descriptions-item>
+                <el-descriptions-item label="系统负载（1 / 5 / 15 分钟）">
+                  <template v-if="serverInfo.load.available">
+                    {{ serverInfo.load.one.toFixed(2) }} /
+                    {{ serverInfo.load.five.toFixed(2) }} /
+                    {{ serverInfo.load.fifteen.toFixed(2) }}
+                  </template>
+                  <template v-else>
+                    <span>该平台不提供</span>
+                    <span class="text-g-600 text-xs ml-2">
+                      （Windows 无 load average 指标，参考 CPU 使用率）
+                    </span>
+                  </template>
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
+            <div class="w-80 p-4 text-center">
+              <div class="pb-3.5">
+                <span class="text-base font-medium">CPU 使用率</span>
+              </div>
+              <el-progress type="dashboard" :percentage="cpuUsage" />
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+
       <!-- Go 运行时信息 -->
       <el-col :span="24" class="mb-4">
         <el-card class="art-table-card" shadow="never">
@@ -105,7 +153,7 @@
 
 <script setup lang="ts">
   import api from '@/api/safeguard/server'
-  import { computed, onMounted, reactive, ref } from 'vue'
+  import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 
   /** 后端 GET /core/server/monitor 返回结构 */
   interface MonitorCpu {
@@ -138,6 +186,8 @@
     one: number
     five: number
     fifteen: number
+    /** 平台是否提供 load average（Windows 为 false） */
+    available: boolean
   }
 
   interface MonitorServer {
@@ -161,12 +211,17 @@
   }
 
   const loading = ref(false)
+  /** 最后一次成功刷新的时间（HH:mm:ss） */
+  const lastUpdated = ref('')
+  /** 刷新间隔（毫秒）：CPU 使用率是两次采样之间的差值，间隔稳定数值才有意义 */
+  const REFRESH_INTERVAL = 5000
+  let timer: ReturnType<typeof setInterval> | undefined
 
   const serverInfo = reactive<MonitorData>({
     cpu: { cores: 0, used: '-', idle: '-', usage: 0, go_version: '' },
     memory: { total: 0, used: 0, free: 0, usage: 0, php_version: '' },
     disk: { total: 0, used: 0, free: 0, usage: 0, path: '' },
-    load: { one: 0, five: 0, fifteen: 0 },
+    load: { one: 0, five: 0, fifteen: 0, available: false },
     server: { hostname: '', os: '', arch: '', go: '', uptime: 0, start_time: '', now_time: '' },
     cache_keys: 0,
     goroutines: 0
@@ -175,16 +230,25 @@
   /** 内存使用率（保留两位小数） */
   const memoryUsage = computed(() => Number(Number(serverInfo.memory.usage).toFixed(2)))
 
-  /** 磁盘信息（Go 后端返回的是单个对象，转为单行表格数据） */
-  const diskRows = computed(() => [
-    {
-      path: serverInfo.disk.path || '-',
-      total: formatBytes(serverInfo.disk.total),
-      used: formatBytes(serverInfo.disk.used),
-      free: formatBytes(serverInfo.disk.free),
-      usage: Number(Number(serverInfo.disk.usage).toFixed(2))
-    }
-  ])
+  /** CPU 使用率（保留两位小数，用于仪表盘） */
+  const cpuUsage = computed(() => Number(Number(serverInfo.cpu.usage).toFixed(2)))
+
+  /** CPU 使用率文本：后端不可采集时显示占位符 */
+  const cpuUsageText = computed(() => (serverInfo.cpu.used === '-' ? '该平台不提供' : `${cpuUsage.value.toFixed(2)}%`))
+
+  /** 磁盘信息（Go 后端返回的是单个对象，转为单行表格数据；采集不到时显示占位符） */
+  const diskRows = computed(() => {
+    const available = Number(serverInfo.disk.total) > 0
+    return [
+      {
+        path: available ? serverInfo.disk.path : '该平台不提供',
+        total: available ? formatBytes(serverInfo.disk.total) : '—',
+        used: available ? formatBytes(serverInfo.disk.used) : '—',
+        free: available ? formatBytes(serverInfo.disk.free) : '—',
+        usage: available ? Number(Number(serverInfo.disk.usage).toFixed(2)) : 0
+      }
+    ]
+  })
 
   /**
    * 字节数格式化
@@ -225,6 +289,10 @@
       serverInfo.server = { ...serverInfo.server, ...data?.server }
       serverInfo.cache_keys = data?.cache_keys ?? 0
       serverInfo.goroutines = data?.goroutines ?? 0
+
+      const now = new Date()
+      const pad = (n: number): string => String(n).padStart(2, '0')
+      lastUpdated.value = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
     } finally {
       loading.value = false
     }
@@ -232,6 +300,12 @@
 
   onMounted(() => {
     updateServer()
+    // 定时刷新：CPU 使用率取两次采样差值，间隔固定才能反映「最近 5 秒」的真实占用
+    timer = setInterval(updateServer, REFRESH_INTERVAL)
+  })
+
+  onUnmounted(() => {
+    if (timer) clearInterval(timer)
   })
 </script>
 

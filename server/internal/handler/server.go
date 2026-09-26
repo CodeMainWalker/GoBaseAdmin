@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"time"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/CodeMainWalker/GoBaseAdmin/internal/cache"
 	"github.com/CodeMainWalker/GoBaseAdmin/internal/response"
+	"github.com/CodeMainWalker/GoBaseAdmin/internal/sysinfo"
 )
 
 // ServerHandler 服务监控与缓存管理
@@ -22,15 +24,38 @@ func (h *ServerHandler) Monitor(c *gin.Context) {
 	runtime.ReadMemStats(&m)
 
 	// 缓存键数量（字段名沿用上游契约，便于前端直接复用）
-	var cacheKeys int64
-	cacheKeys = int64(len(cacheSnapshot()))
+	cacheKeys := int64(len(cacheSnapshot()))
+
+	// CPU：Windows 取 GetSystemTimes 差值，Linux 取 /proc/stat 差值；
+	// 首次调用是自开机以来的平均值，之后是两次刷新之间的使用率。
+	cpuUsage, cpuOK := sysinfo.Cpu()
+	cpuUsed, cpuIdle := "-", "-"
+	if cpuOK {
+		cpuUsed = fmt.Sprintf("%.2f%%", cpuUsage)
+		cpuIdle = fmt.Sprintf("%.2f%%", 100-cpuUsage)
+	}
+
+	// 磁盘：当前工作目录所在卷 / 文件系统
+	disk := gin.H{"total": 0, "used": 0, "free": 0, "usage": 0, "path": "-"}
+	if d, ok := sysinfo.Disk(); ok {
+		disk = gin.H{
+			"total": d.Total,
+			"used":  d.Used,
+			"free":  d.Free,
+			"usage": d.Usage,
+			"path":  d.Path,
+		}
+	}
+
+	// 负载：Linux / macOS 为真实 loadavg；Windows 没有该指标，available=false
+	load := sysinfo.Load()
 
 	response.Success(c, gin.H{
 		"cpu": gin.H{
 			"cores":      runtime.NumCPU(),
-			"used":       "-",
-			"idle":       "-",
-			"usage":      0,
+			"used":       cpuUsed,
+			"idle":       cpuIdle,
+			"usage":      cpuUsage,
 			"go_version": runtime.Version(),
 		},
 		"memory": gin.H{
@@ -41,17 +66,12 @@ func (h *ServerHandler) Monitor(c *gin.Context) {
 			// 键名沿用上游契约，值实为 Go 运行时版本
 			"php_version": runtime.Version(),
 		},
-		"disk": gin.H{
-			"total": 0,
-			"used":  0,
-			"free":  0,
-			"usage": 0,
-			"path":  ".",
-		},
+		"disk": disk,
 		"load": gin.H{
-			"one":     loadAvg(),
-			"five":    loadAvg(),
-			"fifteen": loadAvg(),
+			"one":       load.One,
+			"five":      load.Five,
+			"fifteen":   load.Fifteen,
+			"available": load.Available,
 		},
 		"server": gin.H{
 			"hostname":   hostname(),
@@ -96,8 +116,6 @@ func pct(used, total uint64) float64 {
 	}
 	return float64(used) / float64(total) * 100
 }
-
-func loadAvg() float64 { return 0 }
 
 func hostname() string {
 	h, err := os.Hostname()
