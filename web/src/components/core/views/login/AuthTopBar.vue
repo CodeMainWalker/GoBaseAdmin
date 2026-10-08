@@ -3,13 +3,13 @@
   <div
     class="absolute w-full flex-cb top-4.5 z-10 flex-c !justify-end max-[1180px]:!justify-between"
   >
-    <div class="flex-cc !hidden max-[1180px]:!flex ml-2 max-sm:ml-6">
+    <div v-if="!plain" class="flex-cc !hidden max-[1180px]:!flex ml-2 max-sm:ml-6">
       <ArtLogo class="icon" size="46" />
       <h1 class="text-xl ont-mediumf ml-2">{{ AppConfig.systemInfo.name }}</h1>
     </div>
 
     <div class="flex-cc gap-1.5 mr-2 max-sm:mr-5">
-      <div class="color-picker-expandable relative flex-c max-sm:!hidden">
+      <div v-if="!plain" class="color-picker-expandable relative flex-c max-sm:!hidden">
         <div
           class="color-dots absolute right-0 rounded-full flex-c gap-2 rounded-5 px-2.5 py-2 pr-9 pl-2.5 opacity-0"
         >
@@ -81,6 +81,16 @@
   import AppConfig from '@/config'
 
   defineOptions({ name: 'AuthTopBar' })
+
+  interface Props {
+    /**
+     * 精简模式（登录页使用）：隐藏主题色调色盘与「≤1180px 的 Logo + 系统名」块
+     * —— 调色盘偏个人化、不像登录页该有的入口；小屏品牌信息由登录页自己的卡片承载。
+     */
+    plain?: boolean
+  }
+
+  withDefaults(defineProps<Props>(), { plain: false })
 
   const settingStore = useSettingStore()
   const userStore = useUserStore()

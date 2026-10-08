@@ -155,6 +155,15 @@
     },
     "title": "欢迎回来",
     "subTitle": "输入您的账号和密码登录",
+    "slogan": "高效 · 安全 · 可扩展的后台管理系统",
+    "refreshCaptcha": "点击刷新验证码",
+    "capability": {
+      "rbac": "角色权限管理",
+      "monitor": "服务运行监控",
+      "i18n": "多语言支持",
+      "theme": "主题自由定制"
+    },
+    "securityHint": "建议使用 Chrome 或 Edge 浏览器访问",
     "roles": {
       "super": "超级管理员",
       "admin": "管理员",

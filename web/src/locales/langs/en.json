@@ -155,6 +155,15 @@
     },
     "title": "Welcome back",
     "subTitle": "Please enter your account and password to login",
+    "slogan": "Efficient, secure and extensible admin system",
+    "refreshCaptcha": "Click to refresh the captcha",
+    "capability": {
+      "rbac": "Role & permission control",
+      "monitor": "Service monitoring",
+      "i18n": "Multi-language support",
+      "theme": "Customizable themes"
+    },
+    "securityHint": "Chrome or Edge recommended",
     "roles": {
       "super": "Super Admin",
       "admin": "Admin",
